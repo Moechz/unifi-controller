@@ -1,0 +1,150 @@
+app_id: unificontrollerdocker
+title: UniFi Network Controller
+image: linuxserver/unifi-controller:8.0.24
+repo_name: unifi-controller
+mode: wrapper
+entrypoint_file: src/entrypoint.sh
+wrapper_note: 'the upstream image boots with the s6-overlay v3 init, which runs as root and
+
+  prepares /config plus the /usr/lib/unifi/{data,logs} paths before starting the
+
+  bundled Java controller. TOS forbids root containers, so src/entrypoint.sh
+
+  does the same preparation and runs the same Java command as the unprivileged
+
+  container user; the two image paths are bind-mounted from the data folder.
+
+  '
+wrapper_note_readme: '- **Entrypoint wrapper** (not a privilege shim): the image''s s6 init needs root
+  to prepare its data paths, so `src/entrypoint.sh` performs that setup and starts the bundled UniFi Java
+  controller directly as the unprivileged container user.'
+user_mode_text: 上游镜像以 root 的 s6 初始化 /config 与 /usr/lib/unifi 下的数据目录，入口包装改为以 uid 1000 完成同样的初始化
+user_mode_cons: "- 上游镜像的 s6 init 以 root 建目录、把 /usr/lib/unifi/{data,logs} 链到 /config，再启动 Java\n  控制器（控制器自带\
+  \ MongoDB）。`user: \"1000:1000\"` 时这套 init 跑不了。\n- 本包把 /usr/lib/unifi/data、/usr/lib/unifi/logs 直接从应用数据目录\
+  \ bind mount 进来（属主 1000），\n  `src/entrypoint.sh` 只做「建目录 + 首次播种 system.properties + 启动同一条 Java 命令」。\n\
+  - 实测非 root 下控制器可启动，HTTPS 8443 有应答，数据落在挂载卷内。\n"
+container_port: 8443
+host_port: 8013
+web_protocol: https
+ports:
+- host: 8014
+  container: 8080
+  protocol: tcp
+- host: 8015
+  container: 3478
+  protocol: udp
+- host: 8016
+  container: 10001
+  protocol: udp
+platform: x86_64
+platforms:
+- x86_64
+- aarch64
+category:
+- Web_Services
+user: 1000:1000
+volumes:
+- host: /Volume1/DockerAppData/unificontrollerdocker/config
+  container: /config
+- host: /Volume1/DockerAppData/unificontrollerdocker/data
+  container: /usr/lib/unifi/data
+- host: /Volume1/DockerAppData/unificontrollerdocker/logs
+  container: /usr/lib/unifi/logs
+- host: /Volume1/DockerAppData/unificontrollerdocker/run
+  container: /usr/lib/unifi/run
+env:
+  TZ: Asia/Shanghai
+  MEM_STARTUP: '128'
+  MEM_LIMIT: '1024'
+healthcheck:
+- CMD-SHELL
+- curl -ks -o /dev/null https://127.0.0.1:8443/status || exit 1
+healthcheck_interval: 30s
+healthcheck_timeout: 10s
+healthcheck_retries: 10
+healthcheck_start_period: 300s
+healthcheck_note: 用 `curl -k` 探 HTTPS 8443（自签证书，根路径可能返回 404，能应答即健康）；首次启动要初始化数据库，`start_period` 给 300s。
+auth: Ubiquiti
+upstream_url: https://github.com/linuxserver/docker-unifi-controller
+upstream_license: GPL-3.0
+license: GPL-3.0
+official: https://github.com/linuxserver/docker-unifi-controller
+help: https://github.com/Moechz/unifi-controller/issues
+upstream_version: 8.0.24
+version: 8.0.24-1
+descript: 'The UniFi Network Controller manages Ubiquiti UniFi access points, switches and gateways: adopt
+  devices, configure Wi-Fi networks and VLANs, see clients and traffic, update firmware and read statistics
+  - all from a local web UI instead of the cloud. This package runs the LinuxServer.io Docker image as
+  a non-root container and keeps the controller database, configuration and logs in the application data
+  folder.'
+important: Requires DockerEngine (installed if missing); add a registry mirror if Docker Hub is unreachable.
+  Open https://<NAS-IP>:8013/ and finish the wizard (self-signed certificate). Devices need inform 8014/tcp
+  and discovery 8016/udp on the LAN. Data lives in the application data folder; back it up before uninstalling
+  with data removal. The bundled controller is frozen at 8.0.24 (legacy image).
+release_note: '1. First release: UniFi Network Controller 8.0.24 from the LinuxServer.io Docker Hub image,
+  running as a non-root container with the web UI, device-inform, STUN and discovery ports published.
+  Controller data and logs are kept in the application data folder.'
+data_notes: '`data/` (mounted at `/usr/lib/unifi/data`) holds `system.properties`, the `db/` MongoDB database,
+  `keystore/` and the adoption credentials; `logs/` holds the controller logs; `config/` is the working
+  directory. Copying the `unificontrollerdocker` folder is a complete backup of the controller.'
+design_notes:
+- '**Non-root by construction.** The image''s s6 init needs root to prepare its data paths, so the wrapper
+  prepares them itself and runs the bundled Java controller as `1000:1000`; `/usr/lib/unifi/data` and
+  `/usr/lib/unifi/logs` are bind-mounted from the application data folder so they are writable.'
+- '**Fixed image tag `8.0.24`**, Docker Hub only, no `privileged`, no `network_mode: host`, no `cap_add`,
+  no Docker socket.'
+- '**Multi-port by necessity**: 8013/tcp web UI, 8014/tcp device inform, 8015/udp STUN, 8016/udp discovery.
+  Only the web UI is opened by the App Center.'
+- '**Health check** over HTTPS with `curl -k` (self-signed certificate) and a 300 s start period.'
+limitations:
+- 'The LinuxServer.io UniFi image is legacy: Ubiquiti moved to the "UniFi Network Application" with an
+  external MongoDB. This package keeps 8.0.24 working but new controller features and updates are not
+  available until the image is rebased.'
+- Devices must be able to reach ports 8014/tcp (inform) and 8016/udp (discovery) on the NAS; if you change
+  the ports in docker-compose.yml, also point the devices at the new inform address.
+- The UI is HTTPS with a self-signed certificate. Put it behind a TLS reverse proxy if you expose it outside
+  the LAN.
+runtime_files:
+- path: config
+  purpose: working directory of the controller (ace.jar start runs here)
+  created: first start
+  growth: static
+  lifecycle: kept; contains no user data itself
+- path: data/system.properties
+  purpose: controller properties, including the Java heap limits (MEM_LIMIT/MEM_STARTUP)
+  created: first start from the image defaults
+  growth: static
+  lifecycle: never overwritten after first run; edit it to change the heap
+- path: data/db
+  purpose: MongoDB database with sites, devices, clients, WiFi configuration and statistics
+  created: first start
+  growth: grows with devices, clients and retained statistics
+  lifecycle: never delete; it is the controller's whole state
+- path: data/keystore
+  purpose: keys used for device adoption and the controller certificate
+  created: first start
+  growth: static
+  lifecycle: never delete; without it adopted devices cannot be managed
+- path: logs
+  purpose: controller log files
+  created: first start
+  growth: rotated by the controller
+  lifecycle: safe to delete
+translations:
+  zh-cn:
+    descript: UniFi Network Controller 用来管理 Ubiquiti 的 UniFi 无线 AP、交换机与网关：设备采纳、Wi-Fi 与 VLAN 配置、客户端与流量查看、固件升级、统计报表，全部在本地网页界面完成，不依赖云端。本应用以非
+      root 容器运行 LinuxServer.io 的镜像，控制器数据库、配置与日志保存在应用数据目录。
+    important: 需要 DockerEngine（缺失时应用中心会提示安装）。镜像安装时从 Docker Hub 拉取，无法直连请先配置镜像加速。打开 https://NAS地址:8013/
+      完成初始化向导（自签证书，浏览器会提示一次）。设备通过 8014/tcp（inform）采纳、8016/udp 发现、8015/udp（STUN）通信，请保证局域网内可访问这些端口。数据在应用数据目录，卸载并删除数据前请先备份。镜像内的控制器固定在
+      8.0.24（上游镜像已进入维护冻结）。
+    release_note: 1. 首次发布：来自 LinuxServer.io Docker Hub 镜像的 UniFi Network Controller 8.0.24，以非 root 容器运行，发布网页、inform、STUN
+      与发现端口；控制器数据与日志保存在应用数据目录。
+  zh-hk:
+    descript: UniFi Network Controller 用來管理 Ubiquiti 的 UniFi 無線 AP、交換器與閘道：裝置採納、Wi-Fi 與 VLAN 設定、用戶端與流量檢視、韌體升級、統計報表，全部在本機網頁介面完成，不依賴雲端。本應用以非
+      root 容器執行 LinuxServer.io 的映像，控制器資料庫、設定與日誌保存在應用資料目錄。
+    important: 需要 DockerEngine（缺少時應用中心會提示安裝）。映像安裝時從 Docker Hub 下載，無法直連請先設定映像加速。開啟 https://NAS位址:8013/
+      完成初始化精靈（自簽憑證，瀏覽器會提示一次）。裝置透過 8014/tcp（inform）採納、8016/udp 探索、8015/udp（STUN）通訊，請確保區域網路內可存取這些連接埠。資料在應用資料目錄，解除安裝並刪除資料前請先備份。映像內的控制器固定在
+      8.0.24（上游映像已進入維護凍結）。
+    release_note: 1. 首次發佈：來自 LinuxServer.io Docker Hub 映像的 UniFi Network Controller 8.0.24，以非 root 容器執行，發佈網頁、inform、STUN
+      與探索連接埠；控制器資料與日誌保存在應用資料目錄。
+http_path: /status

@@ -1,0 +1,68 @@
+# ===========================================================================
+# UniFi Network Controller for TerraMaster TOS 7 (Docker application)
+# ===========================================================================
+# Upstream image : linuxserver/unifi-controller:8.0.24 (Docker Hub, used unmodified)
+#                  -> https://github.com/linuxserver/docker-unifi-controller
+#
+# Ports   : host 8013 -> container 8443. The host port is in the
+#           TOS-recommended 8000-19999 range and is not one of the reserved
+#           ports (22/80/443/445/3306/5050/5432/6379/8181/8443).
+# Volumes : all persistent data lives below
+#           /Volume1/DockerAppData/unificontrollerdocker/. The /Volume* wildcard is
+#           deliberately NOT used: the platform does not expand it.
+# TOS rules honoured: Docker Hub image with a fixed tag (never ':latest'),
+#           container_name == application id, restart: unless-stopped,
+#           non-root user, no privileged mode, no network_mode: host, no
+#           cap_add, explicit TZ, a healthcheck on the only service, and
+#           x-app-meta as the last block.
+# Wrapper : the upstream image boots with the s6-overlay v3 init, which runs as root and
+#           prepares /config plus the /usr/lib/unifi/{data,logs} paths before starting the
+#           bundled Java controller. TOS forbids root containers, so src/entrypoint.sh
+#           does the same preparation and runs the same Java command as the unprivileged
+#           container user; the two image paths are bind-mounted from the data folder.
+# Escaping: docker compose interpolates ${VAR}/$VAR in compose files, so any
+#           '$' meant for the shell is written '$$'.
+#
+# NOTE for maintainers: never place a comment line directly in front of a
+# "- value" sequence item (ports, volumes, ...). The official
+# TOSAppSelfTestingTool parses the compose file line by line; a comment inside
+# a sequence makes it skip its permission sync, the mounted directories stay
+# root-owned and the non-root container cannot write into them.
+
+services:
+  unificontrollerdocker:
+    image: linuxserver/unifi-controller:8.0.24
+    container_name: unificontrollerdocker
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        @@ENTRYPOINT_SH@@
+    ports:
+      - "8013:8443"
+      - "8014:8080/tcp"
+      - "8015:3478/udp"
+      - "8016:10001/udp"
+    environment:
+      TZ: "Asia/Shanghai"
+      MEM_STARTUP: "128"
+      MEM_LIMIT: "1024"
+    volumes:
+      - /Volume1/DockerAppData/unificontrollerdocker/config:/config
+      - /Volume1/DockerAppData/unificontrollerdocker/data:/usr/lib/unifi/data
+      - /Volume1/DockerAppData/unificontrollerdocker/logs:/usr/lib/unifi/logs
+      - /Volume1/DockerAppData/unificontrollerdocker/run:/usr/lib/unifi/run
+    healthcheck:
+      test: ["CMD-SHELL", "curl -ks -o /dev/null https://127.0.0.1:8443/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+
+# TOS App Center web metadata (must be the last block of the file):
+# web.port is the published host port above, protocol is http.
+x-app-meta:
+  web:
+    port: 8013
+    protocol: https
