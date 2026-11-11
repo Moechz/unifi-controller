@@ -2,6 +2,11 @@
 
 All notable user-visible changes to the UniFi Network Controller TOS application package.
 
+## 8.0.24-2 — 2026-11-12
+
+### Changed
+- Icon: replaced the letter monogram with a functional vector mark that describes what the app does (the upstream project does not publish a compliant SVG).
+
 ## 8.0.24-1 — 2026-11-08
 
 ### Added

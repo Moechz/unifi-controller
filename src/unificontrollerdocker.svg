@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" rx="96" fill="#e8590c"/>
-  <text x="256" y="256" fill="#ffffff" font-family="Helvetica,Arial,sans-serif" font-size="300" font-weight="bold" text-anchor="middle" dominant-baseline="central">U</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="108" fill="#be123c"/>
+  <path d="M160 232a136 136 0 01192 0M200 272a80 80 0 01112 0" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round"/><circle cx="256" cy="328" r="22" fill="#fff"/>
 </svg>

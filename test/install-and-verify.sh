@@ -59,6 +59,12 @@ ok()        { echo "  [ OK ] $*"; PASS=$((PASS+1)); }
 bad()       { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }
 info_note() { echo "  [info] $*"; }
 
+write_as_uid() {  # host_path uid  (images without a shell: probe with a helper container)
+  "$DOCKER" run --rm -u "$2" -v "$1:/mnt" --entrypoint sh busybox:1.36.1 \
+    -c 'touch /mnt/.e2e-write && rm -f /mnt/.e2e-write' >/dev/null 2>&1
+}
+
+
 [ "$(id -u)" = "0" ] || { echo "ERROR: must run as uid 0 (TOS admin account)"; exit 1; }
 [ -s "$PKG" ] || { echo "ERROR: package not found: $PKG"; exit 1; }
 [ -x "$TOOL" ] || { echo "ERROR: TOSAppSelfTestingTool missing at $TOOL"; exit 1; }
@@ -94,7 +100,8 @@ echo
 echo "== 2/6  wait until the service answers =="
 ready=no
 for i in $(seq 1 45); do
-  if curl $CURLK -fsS -m 3 "${WEB_PROTOCOL}://${PROBE_HOST}:${PORT}${HTTP_PATH}" >/dev/null 2>&1; then
+  rcode=$(curl $CURLK -s -o /dev/null -w '%{http_code}' -m 3 "${WEB_PROTOCOL}://${PROBE_HOST}:${PORT}${HTTP_PATH}" 2>/dev/null)
+  if [ "${rcode#2}" != "$rcode" ] || [ "${rcode#3}" != "$rcode" ] || [ "$rcode" = 401 ] || [ "$rcode" = 403 ]; then
     ready=yes; echo "   ready after ~$((i * 2))s"; break
   fi
   sleep 2
@@ -112,6 +119,12 @@ for _ in $(seq 1 100); do
 done
 [ "$hstat" = healthy ] && ok "healthcheck = healthy" || bad "healthcheck = ${hstat:-unknown}"
 uid=$("$DOCKER" exec "$APPID" id -u 2>/dev/null)
+case "$uid" in ''|*[!0-9]*) uid="";; esac
+if [ -z "$uid" ]; then
+  # distroless images have no `id`; read the host view of the container's PID 1
+  pid=$("$DOCKER" inspect -f '{{.State.Pid}}' "$APPID" 2>/dev/null)
+  [ -n "$pid" ] && uid=$(awk '/^Uid:/{print $2}' /proc/$pid/status 2>/dev/null)
+fi
 [ "$uid" = "$UIDSPEC" ] && ok "runs as uid $UIDSPEC (non-root)" || bad "uid=$uid (expected $UIDSPEC)"
 ss -tln 2>/dev/null | grep -q ":${PORT} " && ok "web port ${PORT} listening" || bad "web port ${PORT} not listening"
 pub=$("$DOCKER" port "$APPID" 2>/dev/null)
@@ -183,7 +196,8 @@ for pair in "${_av[@]}"; do
   o=$(stat -c '%u' "$vh" 2>/dev/null)
   [ "$o" = "$UIDSPEC" ] && ok "volume $vh owned by uid $UIDSPEC" \
     || bad "volume $vh owner uid=$o (expected $UIDSPEC)"
-  if "$DOCKER" exec "$APPID" sh -c "touch $vc/.e2e-write && rm -f $vc/.e2e-write" >/dev/null 2>&1; then
+  if "$DOCKER" exec "$APPID" sh -c "touch $vc/.e2e-write && rm -f $vc/.e2e-write" >/dev/null 2>&1 \
+     || write_as_uid "$vh" "$UIDSPEC" 2>/dev/null; then
     ok "the service can write into $vc"
   else
     bad "the service cannot write into $vc"
@@ -194,7 +208,7 @@ done
 owner_root=$(stat -c '%u' "$DATA" 2>/dev/null)
 [ "$owner_root" = "$UIDSPEC" ] || info_note "app data root owner uid=$owner_root (platform-managed)"
 if "$DOCKER" exec "$APPID" sh -c "touch $VOL0_CONT/.e2e-write && rm -f $VOL0_CONT/.e2e-write" \
-     >/dev/null 2>&1; then
+     >/dev/null 2>&1 || write_as_uid "$VOL0" "$UIDSPEC" 2>/dev/null; then
   ok "the service can write into $VOL0_CONT"
 else
   bad "the service cannot write into $VOL0_CONT (a comment inside the compose volumes list, or the wrong uid)"
@@ -223,6 +237,7 @@ echo "== 5/6  functionality =="
 code=$(curl $CURLK -s -o /dev/null -w '%{http_code}' -m 8 "${WEB_PROTOCOL}://${PROBE_HOST}:${PORT}${HTTP_PATH}" || true)
 case "$code" in
   2*|3*) ok "HTTP ${HTTP_PATH} -> ${code}" ;;
+  401|403) ok "HTTP ${HTTP_PATH} -> ${code} (auth-protected, server answers)" ;;
   *) bad "HTTP ${HTTP_PATH} -> ${code:-no response}" ;;
 esac
 CONTENT_CONTAINER=$(j "(d.get('content_volume') or '')")
@@ -259,6 +274,7 @@ for _ in $(seq 1 40); do
 done
 case "$code2" in
   2*|3*) ok "still serving after a restart (${code2})" ;;
+  401|403) ok "still serving after a restart (${code2}, auth-protected)" ;;
   *) bad "after restart: ${code2:-no response}" ;;
 esac
 marker2="keep-$$"

@@ -77,7 +77,7 @@
   "official": "https://github.com/linuxserver/docker-unifi-controller",
   "help": "https://github.com/Moechz/unifi-controller/issues",
   "upstream_version": "8.0.24",
-  "version": "8.0.24-1",
+  "version": "8.0.24-2",
   "descript": "The UniFi Network Controller manages Ubiquiti UniFi access points, switches and gateways: adopt devices, configure Wi-Fi networks and VLANs, see clients and traffic, update firmware and read statistics - all from a local web UI instead of the cloud. This package runs the LinuxServer.io Docker image as a non-root container and keeps the controller database, configuration and logs in the application data folder.",
   "important": "Requires DockerEngine (installed if missing); add a registry mirror if Docker Hub is unreachable. Open https://<NAS-IP>:8013/ and finish the wizard (self-signed certificate). Devices need inform 8014/tcp and discovery 8016/udp on the LAN. Data lives in the application data folder; back it up before uninstalling with data removal. The bundled controller is frozen at 8.0.24 (legacy image).",
   "release_note": "1. First release: UniFi Network Controller 8.0.24 from the LinuxServer.io Docker Hub image, running as a non-root container with the web UI, device-inform, STUN and discovery ports published. Controller data and logs are kept in the application data folder.",
